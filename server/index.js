@@ -8,8 +8,10 @@ const app = express();
 
 // Enable CORS for development
 app.use(cors({
-  origin: 'http://localhost:3000',
-  credentials: true
+  origin: process.env.APP_URL,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 // Session configuration
@@ -28,15 +30,17 @@ app.use(session({
 
 // Keycloak configuration
 const keycloakConfig = {
-  realm: process.env.KEYCLOAK_REALM || 'master',
-  'auth-server-url': process.env.KEYCLOAK_URL || 'http://46.149.69.28:8080',
+  realm: process.env.KEYCLOAK_REALM,
+  'auth-server-url': process.env.KEYCLOAK_URL,
   'ssl-required': 'external',
-  resource: process.env.KEYCLOAK_CLIENT_ID || 'test-client',
+  resource: process.env.KEYCLOAK_CLIENT_ID,
   'public-client': true,
   'confidential-port': 0,
   'bearer-only': false,
   'use-resource-role-mappings': true,
-  'verify-token-audience': false
+  'verify-token-audience': false,
+  'redirect-uri': `${process.env.APP_URL}/oauth2/callback`,
+  'base-url': process.env.APP_URL
 };
 
 // Log the Keycloak configuration for debugging
@@ -147,19 +151,26 @@ app.get('/protected', keycloak.protect(), (req, res) => {
 // Logout route
 app.get('/logout', keycloak.protect(), (req, res) => {
   const redirectUri = process.env.APP_URL || `http://${req.headers.host}`;
-  const logoutUrl = new URL(
+  const keycloakLogoutUrl = new URL(
     `/realms/${process.env.KEYCLOAK_REALM}/protocol/openid-connect/logout`,
     process.env.KEYCLOAK_URL
   );
   
-  logoutUrl.searchParams.append('redirect_uri', redirectUri);
+  // Add query parameters for logout
+  const params = new URLSearchParams({
+    'redirect_uri': redirectUri,
+    'client_id': process.env.KEYCLOAK_CLIENT_ID
+  });
+  
+  const fullLogoutUrl = `${keycloakLogoutUrl}?${params}`;
   
   req.session.destroy((err) => {
     if (err) {
       console.error('Error destroying session:', err);
       return res.status(500).send('Error during logout');
     }
-    res.redirect(logoutUrl.toString());
+    console.log('Logging out, redirecting to:', fullLogoutUrl);
+    res.redirect(fullLogoutUrl);
   });
 });
 
